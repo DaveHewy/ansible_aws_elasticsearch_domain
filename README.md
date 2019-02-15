@@ -43,6 +43,7 @@ Example Playbook
 
 Example invocation playbook
 
+```
 - hosts: localhost
   gather_facts: no
   environment: "{{ aws_environment }}"
@@ -84,7 +85,7 @@ Example invocation playbook
           env_target: dev
       register: es_domain
     - debug: msg="{{ es_domain.domain }}"
-
+```
 
 License
 -------
