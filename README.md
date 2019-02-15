@@ -1,40 +1,90 @@
-Role Name
+AWS ElasticSearch Domain
 =========
 
-A brief description of the role goes here.
-
-Requirements
-------------
-
-Any pre-requisites that may not be covered by Ansible itself or the role should
-be mentioned here. For instance, if the role uses the EC2 module, it may be a
-good idea to mention in this section that the boto package is required.
+Creates an AWS ElasticSearch domain. Currently this role does not support updating of the cluster.
+That is coming soon.
 
 Role Variables
 --------------
 
-A description of the settable variables for this role should go here, including
-any variables that are in defaults/main.yml, vars/main.yml, and any variables
-that can/should be set via parameters to the role. Any variables that are read
-from other roles and/or the global scope (ie. hostvars, group vars, etc.) should
-be mentioned here as well.
+| parameter             | required | default | choices | comments |
+| --------------------- | -------- | ------- | -------- |-------- |
+| domain_name | yes | | | |
+| es_version | yes | 6.4 | | |
+| es_instance_type | yes | | | |
+| es_instance_count | yes | 1 | | |
+| dedicated_master_enabled | no | False | | |
+| zone_awareness_enabled | no | False | | |
+| zone_awareness_az_count | no | 2 | | |
+| ebs_enabled | yes | | | |
+| ebs_volume_type | yes | gp2 | | |
+| ebs_volume_size | yes | 10Gb | | |
+| ebs_iops | no | | | |
+| access_policies | yes | | | |
+| automated_snapshot_hour | no | 0 | | |
+| vpc_deployment | no | | | |
+| vpc_subnet_ids | no | | | |
+| vpc_security_group_ids | no | false | | |
+| encryption_at_rest_enabled | no | False | | |
+| encryption_at_rest_kms_key_id | no | | | |
+| advanced_options | no | {} | | |
+| node_to_node_encryption_enabled | no | False | | Node to node encryption |
+| advanced_options | no | {} | | |
+| tags | no | {} | |   |
+| wait | no | False | | |
 
 Dependencies
 ------------
 
-A list of other roles hosted on Galaxy should go here, plus any details in
-regards to parameters that may need to be set for other roles, or variables that
-are used from other roles.
+n/a
 
 Example Playbook
 ----------------
 
-Including an example of how to use your role (for instance, with variables
-passed in as parameters) is always nice for users too:
+Example invocation playbook
 
-    - hosts: servers
-      roles:
-         - { role: aws_elasticsearch_domain, x: 42 }
+- hosts: localhost
+  gather_facts: no
+  environment: "{{ aws_environment }}"
+  roles:
+    - role: aws_elasticsearch_domain
+  vars:
+    state: present
+    domain_name: devops-dev-indigo
+    access_policy:
+      Version: 2012-10-17
+      Statement:
+        - Effect: Allow
+          Principal:
+            AWS:
+              - '{{ aws_account_id }}'
+          Action:
+            - 'es:*'
+          Resource: "arn:aws:es:{{ aws_region }}:{{ aws_account_id }}:domain/{{ domain_name }}/*"
+  tasks:
+    - name: invoke the elasticsearch lib
+      elasticsearch_domain:
+        state: present
+        domain_name: '{{ domain_name }}'
+        access_policies: '{{ access_policy | to_nice_json }}'
+        es_instance_type: m4.large.elasticsearch
+        es_instance_count: 2
+        encryption_at_rest_enabled: true
+        encryption_at_rest_kms_key_id: 'bd6fa71e-f3e6-4685-8acc-517c197e22cb'
+        automated_snapshot_hour: 2
+        node_to_node_encryption_enabled: true
+        zone_awareness_enabled: true
+        zone_awareness_az_count: 2
+        dedicated_master_enabled: true
+        dedicated_master_instance_type: m4.large.elasticsearch
+        dedicated_master_count: 3
+        tags:
+          Name: '{{ domain_name }}'
+          stack: indigo
+          env_target: dev
+      register: es_domain
+    - debug: msg="{{ es_domain.domain }}"
+
 
 License
 -------
@@ -44,5 +94,4 @@ BSD
 Author Information
 ------------------
 
-An optional section for the role authors to include contact information, or a
-website (HTML is not allowed).
+BGC Partners
