@@ -139,12 +139,43 @@ def _create_elasticsearch_domain(module, client):
     return response
 
 
-def ensure_updated(module, client):
-    """`
+def ensure_updated(module, client, desired_modifications, es_domain):
+    """[summary]
 
     [description]
+
+    Arguments:
+        module {[type]} -- [description]
+        client {[type]} -- [description]
+        desired_modifications {[type]} -- [description]
+        es_domain {[type]} -- [description]
+
+    Returns:
+        bool -- [description]
     """
-    return False
+    existing_config = desired_config = es_domain['DomainStatus']
+    for config in existing_config:
+        if config in desired_modifications:
+            if isinstance(existing_config[config], dict):
+                for key, val in desired_modifications[config].items():
+                    desired_config[config].update({key: val})
+            else:
+                desired_config[config] = desired_modifications[config]
+
+    # trim the fat
+    trimmed_fields = ['ARN', 'Processing', 'Created', 'Deleted', 'DomainId', 'Endpoint', 'ServiceSoftwareOptions',
+                      'UpgradeProcessing', 'ElasticsearchVersion', 'NodeToNodeEncryptionOptions',
+                      'EncryptionAtRestOptions']
+    for field in trimmed_fields:
+        del desired_config[field]
+
+    try:
+        client.update_elasticsearch_domain_config(**desired_config)
+        return True, is_present(module, client)
+    except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:
+        module.fail_json_aws(e, msg='Unable to create ElasticSearch domain')
+
+    return False, False
 
 
 def is_update_required(module, es_domain):
@@ -156,7 +187,94 @@ def is_update_required(module, es_domain):
         module {[type]} -- [description]
         client {[type]} -- [description]
     """
-    return False
+    existing_config = es_domain['DomainStatus']
+    desired_config = module.params
+    desired_modifications = {}
+
+    config_to_check = [
+        (('ElasticsearchVersion',), desired_config['es_version']),
+        (('ElasticsearchClusterConfig', 'InstanceCount'),
+            desired_config['es_instance_count']),
+        (('ElasticsearchClusterConfig', 'InstanceType'),
+            desired_config['es_instance_type']),
+        (('ElasticsearchClusterConfig', 'DedicatedMasterEnabled'),
+            desired_config['dedicated_master_enabled']),
+        (('EBSOptions', 'EBSEnabled'),
+            desired_config['ebs_enabled']),
+        (('EBSOptions', 'VolumeType'),
+            desired_config['ebs_volume_type']),
+        (('EBSOptions', 'VolumeSize'),
+            desired_config['ebs_volume_size']),
+        (('SnapshotOptions', 'AutomatedSnapshotStartHour'),
+            desired_config['automated_snapshot_hour']),
+        # (('EncryptionAtRestOptions', 'Enabled'),
+        #     desired_config['encryption_at_rest_enabled']),
+        # (('EncryptionAtRestOptions', 'KmsKeyId'),
+        #     desired_config['encryption_at_rest_kms_key_id']),
+        # (('NodeToNodeEncryptionOptions', 'Enabled'),
+        #     desired_config['node_to_node_encryption_enabled'])
+    ]
+
+    # Dont bother checking for changes to the dedicated master unless its enabled.
+    if desired_config['dedicated_master_enabled']:
+        config_to_check.append(
+            (('ElasticsearchClusterConfig', 'DedicatedMasterCount'),
+                desired_config['dedicated_master_count']),
+            (('ElasticsearchClusterConfig', 'DedicatedMasterType'),
+                desired_config['dedicated_master_instance_type'])
+        )
+
+    if desired_config['ebs_volume_type'] == 'io1':
+        config_to_check.append(
+            (('EBSOptions', 'Iops'),
+                desired_config['ebs_iops'])
+        )
+
+    # if this were to be a vpc_deployment
+    if desired_config['vpc_deployment']:
+        config_to_check.append(
+            (('VPCOptions', 'SubnetIds'),
+                desired_config['vpc_subnet_ids'])
+        )
+        config_to_check.append(
+            (('VPCOptions', 'SecurityGroupIds'),
+                desired_config['vpc_security_group_ids'])
+        )
+
+    for key_path, desired_value in config_to_check:
+        for key in key_path:
+            existing_value = existing_config.get(key)
+            if isinstance(existing_value, dict):
+                existing_value = existing_value[key_path[-1]]
+            break
+
+        if existing_value != desired_value:
+            for key in key_path[:-1]:
+                if key not in desired_modifications:
+                    desired_modifications[key] = {}
+                if key_path[-1]:
+                    desired_modifications[key].update({
+                        key_path[-1]: desired_value
+                    })
+            for key in key_path[:1]:
+                if key not in desired_modifications:
+                    desired_modifications.update({
+                        key: desired_value
+                    })
+
+    # Do some comparison of iam json
+    try:
+        existing_access_json = json.loads(es_domain['DomainStatus']['AccessPolicies'])
+        desired_access_json = json.loads(module.params.get('access_policies'))
+        if compare_policies(existing_access_json, desired_access_json):
+            desired_modifications['AccessPolicies'] = module.params.get('access_policies')
+    except ValueError:
+        # incase either one of the policies cannot be correctly read.
+        # assume the desired policy is now correct and attempt to use it.
+        if module.params.get('access_policies') != '':
+            desired_modifications['AccessPolicies'] = module.params.get('access_policies')
+        pass
+    return True if desired_modifications else False, desired_modifications
 
 
 def is_present(module, client):
@@ -211,7 +329,8 @@ def ensure_created(module, client):
     else:
         es_domain = _create_elasticsearch_domain(module, client)
         changed = True
-        return changed, es_domain
+
+    return changed, es_domain
 
 
 def main():
@@ -271,10 +390,10 @@ def main():
     state = module.params.get('state')
     if state == 'present':
         changed, es_domain = ensure_created(module, client)
-        update_required = is_update_required(module, es_domain)
+        update_required, desired_modifications = is_update_required(module, es_domain)
 
         if update_required:
-            es_domain = ensure_updated(module, client)
+            changed, es_domain = ensure_updated(module, client, desired_modifications, es_domain)
 
         # Create tags
         if tags:

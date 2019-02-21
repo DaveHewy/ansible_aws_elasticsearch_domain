@@ -87,6 +87,13 @@ Example invocation playbook
     - debug: msg="{{ es_domain.domain }}"
 ```
 
+TODO
+-------
+
+- Add support for deeper nesting in the update sequences
+- Add support for cognito
+- Add support for logging
+
 License
 -------
 
