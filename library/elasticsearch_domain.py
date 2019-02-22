@@ -65,6 +65,12 @@ def _create_elasticsearch_domain(module, client):
     vpc_subnet_ids = module.params.get('vpc_subnet_ids')
     vpc_security_group_ids = module.params.get('vpc_security_group_ids')
 
+    # Cognito options
+    cognito_enabled = module.params.get('cognito_enabled')
+    cognito_user_pool_id = module.params.get('cognito_user_pool_id')
+    cognito_identity_pool_id = module.params.get('cognito_identity_pool_id'),
+    cognito_role_arn = module.params.get('cognito_role_arn')
+
     es_config = {
         'DomainName': domain_name,
         'ElasticsearchVersion': es_version,
@@ -115,6 +121,16 @@ def _create_elasticsearch_domain(module, client):
             es_config['ElasticsearchClusterConfig'].update(
                 DedicatedMasterCount=dedicated_master_count
             )
+
+    # If cognito options enabled
+    if cognito_enabled:
+        es_config['CognitoOptions'] = {}
+        es_config.update({
+            'Enabled': True,
+            'UserPoolId': cognito_user_pool_id,
+            'IdentityPoolId': cognito_identity_pool_id,
+            'RoleArn': cognito_role_arn
+        })
 
     # If zone awareness enabled extend the ElasticsearchClusterConfig key
     # if zone_awareness_enabled:
@@ -206,7 +222,8 @@ def is_update_required(module, es_domain):
         (('EBSOptions', 'VolumeSize'),
             desired_config['ebs_volume_size']),
         (('SnapshotOptions', 'AutomatedSnapshotStartHour'),
-            desired_config['automated_snapshot_hour']),
+            desired_config['automated_snapshot_hour'])
+
         # (('EncryptionAtRestOptions', 'Enabled'),
         #     desired_config['encryption_at_rest_enabled']),
         # (('EncryptionAtRestOptions', 'KmsKeyId'),
@@ -228,6 +245,19 @@ def is_update_required(module, es_domain):
         config_to_check.append(
             (('EBSOptions', 'Iops'),
                 desired_config['ebs_iops'])
+        )
+
+    # Cognito Options
+    if desired_config['cognito_enabled']:
+        config_to_check.append(
+            (('CognitoOptions', 'Enabled'),
+                desired_config['cognito_enabled'])
+            (('CognitoOptions', 'UserPoolId'),
+                desired_config['cognito_user_pool_id']),
+            (('CognitoOptions', 'IdentityPoolId'),
+                desired_config['cognito_identity_pool_id']),
+            (('CognitoOptions', 'RoleArn'),
+                desired_config['cognito_role_arn'])
         )
 
     # if this were to be a vpc_deployment
@@ -337,18 +367,22 @@ def main():
     argument_spec = ec2_argument_spec()
     argument_spec.update(
         state=dict(type='str', choices=['present', 'absent'], default='present'),
+        # Elasticsearch config
         domain_name=dict(required=True, type='str'),
         es_version=dict(type='str', default='6.4'),
         es_instance_type=dict(type='str'),
         es_instance_count=dict(type='int', default=1),
 
+        # Dedicated master config
         dedicated_master_enabled=dict(type='bool', default=False),
         dedicated_master_count=dict(type='int', default=1),
         dedicated_master_instance_type=dict(type='str'), # required if
 
+        # Zone awareness config
         zone_awareness_enabled=dict(type='bool', default=False),
         zone_awareness_az_count=dict(type='int', default=2),
 
+        # EBS Config
         ebs_enabled=dict(type='bool', default=True),
         ebs_volume_type=dict(type='str', choices=['standard', 'gp2', 'io1'], default='gp2'),
         ebs_volume_size=dict(type='int', default=10),
@@ -356,17 +390,22 @@ def main():
         access_policies=dict(type='json', required=True),
         automated_snapshot_hour=dict(type='int', default=0),
 
-
+        # VPC deployment
         vpc_deployment=dict(type='bool', default=False),
         vpc_subnet_ids=dict(type='list'),
         vpc_security_group_ids=dict(type='list'),
-        # un-supported params atm
-        # cognito_options=dict(type='dict'),
 
+        # Cognito
+        cognito_enabled=dict(type='bool', default=False),
+        cognito_user_pool_id=dict(type='str'),
+        cognito_identity_pool_id=dict(type='str'),
+        cognito_role_arn=dict(type='str'),
+
+        # Encryption config
         encryption_at_rest_enabled=dict(type='bool', default=False),
         encryption_at_rest_kms_key_id=dict(type='str'),
-
         node_to_node_encryption_enabled=dict(type='bool', default=False),
+
         advanced_options=dict(type='dict', default={}),
         log_publishing_options=dict(type='dict'),
         tags=dict(type='dict'),
