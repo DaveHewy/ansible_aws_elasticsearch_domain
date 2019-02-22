@@ -1,8 +1,7 @@
 AWS ElasticSearch Domain
 =========
 
-Creates an AWS ElasticSearch domain. Currently this role does not support updating of the cluster.
-That is coming soon.
+Creates/updates/deletes an AWS ElasticSearch domain.
 
 Role Variables
 --------------
