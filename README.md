@@ -46,12 +46,11 @@ Example invocation playbook
 ```
 - hosts: localhost
   gather_facts: no
-  environment: "{{ aws_environment }}"
   roles:
     - role: aws_elasticsearch_domain
   vars:
     state: present
-    domain_name: devops-dev-indigo
+    domain_name: example-domain
     access_policy:
       Version: 2012-10-17
       Statement:
@@ -71,7 +70,7 @@ Example invocation playbook
         es_instance_type: m4.large.elasticsearch
         es_instance_count: 2
         encryption_at_rest_enabled: true
-        encryption_at_rest_kms_key_id: 'bd6fa71e-f3e6-4685-8acc-517c197e22cb'
+        encryption_at_rest_kms_key_id: '{{ some_key }}'
         automated_snapshot_hour: 2
         node_to_node_encryption_enabled: true
         zone_awareness_enabled: true
@@ -81,8 +80,6 @@ Example invocation playbook
         dedicated_master_count: 3
         tags:
           Name: '{{ domain_name }}'
-          stack: indigo
-          env_target: dev
       register: es_domain
     - debug: msg="{{ es_domain.domain }}"
 ```
@@ -91,15 +88,6 @@ TODO
 -------
 
 - Add support for deeper nesting in the update sequences
-- Add support for cognito
 - Add support for logging
 
-License
--------
 
-BSD
-
-Author Information
-------------------
-
-BGC Partners
