@@ -19,11 +19,13 @@ try:
 except ImportError:
     HAS_BOTO3 = False
 
+import pdb
 import time
 import json
 from ansible.module_utils._text import to_native
 from ansible.module_utils.aws.core import AnsibleAWSModule
 from ansible.module_utils.ec2 import boto3_conn, compare_policies, ec2_argument_spec, get_aws_connection_info
+from ansible.module_utils.ec2 import boto3_tag_list_to_ansible_dict, ansible_dict_to_boto3_tag_list
 
 
 def _create_elasticsearch_domain(module, client):
@@ -327,6 +329,60 @@ def is_present(module, client):
     return response
 
 
+def ensure_tags(module, client, tags, es_domain, changed):
+
+        # handle tag changes slightly more gracefully
+        # ie consider it a change that has applied. rather than silently adding
+        # and not reporting a change in the ansible changed return
+
+        if tags:
+            es_domain_arn = es_domain['DomainStatus']['ARN']
+            try:
+                existing_tags = client.list_tags(ARN=es_domain_arn)
+            except botocore.exceptions.ClientError as e:
+                module.fail_json_aws(e, msg='Unexpected error occured {}'.format(to_native(e)))
+
+            # if no tags currently exist, then just add all tags
+            if not existing_tags['TagList']:
+                updated_tag_list = []
+                for tag_key, tag_value in tags.items():
+                    updated_tag_list.append({'Key': tag_key, 'Value': tag_value})
+            else:
+                # we assume it has some existing tags
+                # first strip back the returned TagList to one level dict
+                existing_tag_dict = {}
+                for tag in existing_tags['TagList']:
+                    existing_tag_dict.update(
+                        {
+                            tag['Key']: tag['Value']
+                        }
+                    )
+
+                # now we simply have two flat dictionaries to compare and merge
+                tags_to_remove = set(existing_tag_dict) - set(tags)
+                tag_dict_merged = {k: v for d in [existing_tag_dict, tags] for k, v in d.items()}
+                if tags_to_remove:
+                    try:
+                        client.remove_tags(ARN=es_domain_arn, TagKeys=list(tags_to_remove))
+                        changed = True
+                    except botocore.exceptions.ClientError as e:
+                        module.fail_json(e, msg='Unexpected error occured {}'.format(to_native(e)))
+                    # munge the dicts together
+                    updated_tag_list = {key: tag_dict_merged[key] for key in tag_dict_merged if key not in tags_to_remove}
+                else:
+                    updated_tag_list = tag_dict_merged
+
+            # if by the end of the processing we have changed to make
+            if updated_tag_list and cmp(updated_tag_list, existing_tag_dict):
+                try:
+                    client.add_tags(ARN=es_domain_arn, TagList=ansible_dict_to_boto3_tag_list(updated_tag_list))
+                    changed = True
+                except botocore.exceptions.ClientError as e:
+                    module.fail_json_aws(e, msg='Unexpected error occured {}'.format(to_native(e)))
+        # leave changed status as passed value unless changes here, then ensure true
+        return changed
+
+
 def ensure_deleted(module, client):
     """Deletes an elasticsearch domain by DomainName
 
@@ -409,7 +465,7 @@ def main():
         advanced_options=dict(type='dict', default={}),
         log_publishing_options=dict(type='dict'),
         tags=dict(type='dict'),
-        wait=dict(type='bool')
+        wait=dict(type='bool', default=True)
     )
 
     module = AnsibleAWSModule(
@@ -434,13 +490,9 @@ def main():
         if update_required:
             changed, es_domain = ensure_updated(module, client, desired_modifications, es_domain)
 
-        # Create tags
+        # if tags deal with changes seperately
         if tags:
-            tag_list = []
-            for tag_key, tag_value in tags.items():
-                tag_list.append({'Key': tag_key, 'Value': tag_value})
-
-            client.add_tags(ARN=es_domain['DomainStatus']['ARN'], TagList=tag_list)
+            changed = ensure_tags(module, client, tags, es_domain, changed)
 
         # if wait is defined
         if module.params.get('wait'):
