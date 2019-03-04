@@ -135,12 +135,12 @@ def _create_elasticsearch_domain(module, client):
         })
 
     # If zone awareness enabled extend the ElasticsearchClusterConfig key
-    # if zone_awareness_enabled:
-    #     es_config['ElasticsearchClusterConfig'].update(
-    #         ZoneAwarenessConfig={
-    #             'AvailabilityZoneCount': zone_awareness_az_count
-    #         }
-    #     )
+    if zone_awareness_enabled:
+        es_config['ElasticsearchClusterConfig'].update(
+            ZoneAwarenessConfig={
+                'AvailabilityZoneCount': zone_awareness_az_count
+            }
+        )
 
     # If vpc_deployment of ES
     if vpc_deployment:
