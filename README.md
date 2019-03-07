@@ -1,7 +1,7 @@
-AWS ElasticSearch Domain
+Ansible AWS ElasticSearch Domain
 =========
 
-Creates/updates/deletes an AWS ElasticSearch domain.
+Ansible role for Elasticsearch (ES) Amazon Web Services (AWS). Creates/updates/deletes an AWS ES domain.
 
 Role Variables
 --------------
