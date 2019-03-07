@@ -89,4 +89,7 @@ TODO
 - Add support for deeper nesting in the update sequences
 - Add support for logging
 
+Author Info
+-------
+David Heward
 
